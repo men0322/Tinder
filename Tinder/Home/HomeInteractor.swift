@@ -16,6 +16,7 @@ protocol HomeRouting: ViewableRouting {
 
 protocol HomePresentable: Presentable {
     var listener: HomePresentableListener? { get set }
+    var homeViewModel: BehaviorRelay<HomeViewModel?> { get }
 }
 
 protocol HomeListener: class {
@@ -29,6 +30,10 @@ final class HomeInteractor: PresentableInteractor<HomePresentable>, HomeInteract
     let partnerService: HNPartnerServiceType
     
     private lazy var getPartnersAction = buildGetPartnersAction()
+
+    var partnersRelay = BehaviorRelay<[HNPartner]>(value: [])
+    
+    var currentPage: Int = 1
     
     init(presenter: HomePresentable,
          partnerService: HNPartnerServiceType) {
@@ -51,12 +56,27 @@ private extension HomeInteractor {
     func configurePresenter() {
         getPartnersAction
             .elements
-            .subscribe(onNext: { result in
-                print(result)
+            .subscribe(onNext: { [weak self] newPartners in
+                guard let self = self else { return }
+                var currentPartners = self.partnersRelay.value
+                currentPartners += newPartners
+                self.partnersRelay.accept(currentPartners)
             })
             .disposeOnDeactivate(interactor: self)
         
-        getPartnersAction.execute((10,1))
+        partnersRelay
+            .map { HomeViewModel(partners: $0) }
+            .bind(to: presenter.homeViewModel)
+            .disposeOnDeactivate(interactor: self)
+        
+        getPartnersAction.execute((10, currentPage))
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self = self else { return }
+            // your code here
+            self.currentPage += 1
+            self.getPartnersAction.execute((10, self.currentPage))
+        }
     }
 
     /// Interactor -> Router
